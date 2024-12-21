@@ -60,6 +60,7 @@ from pdf_processor import (
 )
 import fitz
 from pathlib import Path
+from pdf_processor.errors import Result, ExternalToolError
 
 # Sample test PDF paths
 TEST_PDF_PATH = "tests/sample.pdf"
@@ -456,68 +457,177 @@ def test_partial_borders():
 
 
 def test_parse_args_default():
-    """Test argument parsing with default values."""
+    """Test argument parsing with default values.
+    
+    Verifies that when no arguments are provided:
+    1. Directory defaults to current directory (".")
+    2. Input pattern defaults to "*.pdf"
+    3. Output directory defaults to None (will use input directory)
+    4. All extraction flags are disabled by default
+    5. Debug mode is disabled by default
+    """
     from pdf_processor.main import parse_args
     
-    args = parse_args(["/path/to/pdf"])
-    assert args.pdf_path == "/path/to/pdf"
-    assert not args.images
-    assert not args.text
-    assert not args.markdown
+    args = parse_args([])
+    assert args.dir == "."
+    assert args.input == "*.pdf"
+    assert args.output is None
+    assert not args.extract_images
+    assert not args.extract_text
+    assert not args.extract_markdown
     assert not args.debug
 
 
 def test_parse_args_all_flags():
-    """Test argument parsing with all flags enabled."""
+    """Test argument parsing with all flags and options specified.
+    
+    Verifies that the parser correctly handles:
+    1. Custom input directory path
+    2. Specific file pattern for matching PDFs
+    3. Custom output directory path
+    4. All extraction flags (images, text, markdown)
+    5. Debug mode flag
+    
+    This represents a maximal command-line invocation where all
+    optional arguments are specified.
+    """
     from pdf_processor.main import parse_args
     
-    args = parse_args(["-i", "-t", "-m", "-d", "/path/to/pdf"])
-    assert args.pdf_path == "/path/to/pdf"
-    assert args.images
-    assert args.text
-    assert args.markdown
+    args = parse_args([
+        "-dir", "/path/to/pdfs",
+        "-input", "report*.pdf",
+        "-output", "/path/to/output",
+        "--extract-images",
+        "--extract-text",
+        "--extract-markdown",
+        "-d"
+    ])
+    assert args.dir == "/path/to/pdfs"
+    assert args.input == "report*.pdf"
+    assert args.output == "/path/to/output"
+    assert args.extract_images
+    assert args.extract_text
+    assert args.extract_markdown
     assert args.debug
 
 
-def test_parse_args_invalid():
-    """Test argument parsing with invalid input."""
-    from pdf_processor.main import parse_args
-    import pytest
+def test_parse_args_relative_paths():
+    """Test argument parsing with relative path arguments.
     
-    with pytest.raises(SystemExit):
-        parse_args([])  # Missing required PDF path
+    Verifies that the parser accepts and preserves relative paths:
+    1. Relative input directory (./docs)
+    2. Simple wildcard pattern (*.pdf)
+    3. Parent directory reference in output path (../output)
+    
+    This ensures the tool works with both absolute and relative paths,
+    which is important for command-line usability.
+    """
+    from pdf_processor.main import parse_args
+    
+    args = parse_args([
+        "-dir", "docs",
+        "-input", "*.pdf",
+        "-output", "../output"
+    ])
+    assert args.dir == "docs"
+    assert args.input == "*.pdf"
+    assert args.output == "../output"
 
 
 def test_process_pdf_text_only(tmp_path, mock_dependencies, mock_subprocess_run):
-    """Test PDF processing with text extraction only."""
+    """Test basic text extraction from multiple PDFs.
+    
+    Tests the core text extraction functionality:
+    1. Processes multiple PDFs in a directory
+    2. Creates separate output directories for each PDF
+    3. Names output files based on input PDF names
+    4. Verifies all expected output files are created
+    
+    Directory structure created for test:
+    input/
+        test1.pdf
+        test2.pdf
+    output/
+        test1/
+            test1.txt
+        test2/
+            test2.txt
+    """
     from pdf_processor.main import process_pdf
     
-    # Create a test output directory
+    # Create test input directory with sample PDFs
+    input_dir = tmp_path / "input"
+    input_dir.mkdir()
+    
+    # Copy test PDF to input directory with different names
+    import shutil
+    pdf1 = input_dir / "test1.pdf"
+    pdf2 = input_dir / "test2.pdf"
+    shutil.copy(TEST_PDF_PATH, pdf1)
+    shutil.copy(TEST_PDF_PATH, pdf2)
+    
+    # Create output directory
     output_dir = tmp_path / "output"
-    output_dir.mkdir()
     
     result = process_pdf(
-        TEST_PDF_PATH,
+        str(input_dir),
+        "*.pdf",
         output_dir=str(output_dir),
         extract_text_flag=True
     )
     
     assert result.is_ok
-    assert len(result.value) == 1  # One output file
-    assert result.value[0].suffix == ".txt"
-    assert result.value[0].exists()
+    assert len(result.value) == 2  # Two output files
+    
+    # Check output structure
+    for pdf_name in ["test1", "test2"]:
+        pdf_dir = output_dir / pdf_name
+        assert pdf_dir.is_dir()
+        text_file = pdf_dir / f"{pdf_name}.txt"
+        assert text_file.exists()
+        assert text_file in result.value
 
 
 def test_process_pdf_all_outputs(tmp_path, mock_dependencies, mock_subprocess_run):
-    """Test PDF processing with all output types."""
+    """Test extraction of all supported output formats.
+    
+    Comprehensive test of all extraction modes:
+    1. Text extraction (.txt)
+    2. Markdown conversion with tables (.md)
+    3. Image extraction (.png)
+    
+    Verifies:
+    - All output types are generated
+    - Files are correctly organized in PDF-specific directory
+    - Files follow expected naming conventions
+    - PNG files are created for each page
+    
+    Directory structure created for test:
+    input/
+        test.pdf
+    output/
+        test/
+            test.txt
+            test.md
+            test_page_1.png
+            test_page_2.png
+            ...
+    """
     from pdf_processor.main import process_pdf
     
-    # Create a test output directory
+    # Create test input directory with sample PDF
+    input_dir = tmp_path / "input"
+    input_dir.mkdir()
+    pdf_path = input_dir / "test.pdf"
+    import shutil
+    shutil.copy(TEST_PDF_PATH, pdf_path)
+    
+    # Create output directory
     output_dir = tmp_path / "output"
-    output_dir.mkdir()
     
     result = process_pdf(
-        TEST_PDF_PATH,
+        str(input_dir),
+        "test.pdf",
         output_dir=str(output_dir),
         extract_images_flag=True,
         extract_text_flag=True,
@@ -525,20 +635,129 @@ def test_process_pdf_all_outputs(tmp_path, mock_dependencies, mock_subprocess_ru
     )
     
     assert result.is_ok
-    assert len(result.value) >= 2  # At least text and markdown files
+    
+    # Check output structure
+    pdf_dir = output_dir / "test"
+    assert pdf_dir.is_dir()
     
     # Check file types
     extensions = {p.suffix for p in result.value}
     assert ".txt" in extensions
     assert ".md" in extensions
+    assert ".png" in extensions
+    
+    # Verify file locations
+    assert (pdf_dir / "test.txt") in result.value
+    assert (pdf_dir / "test.md") in result.value
+    # PNG files will have page numbers in their names
+
+
+def test_process_pdf_pattern_matching(tmp_path, mock_dependencies, mock_subprocess_run):
+    """Test PDF processing with glob pattern matching.
+    
+    Verifies the file pattern matching functionality:
+    1. Processes only PDFs matching the pattern
+    2. Ignores non-matching PDFs in same directory
+    3. Creates output only for matched files
+    
+    Directory structure created for test:
+    input/
+        report1.pdf  (processed)
+        report2.pdf  (processed)
+        other.pdf    (ignored)
+    output/
+        report1/
+            report1.txt
+        report2/
+            report2.txt
+    
+    Pattern: "report*.pdf" should match report1.pdf and report2.pdf,
+    but not other.pdf.
+    """
+    from pdf_processor.main import process_pdf
+    
+    # Create test input directory with sample PDFs
+    input_dir = tmp_path / "input"
+    input_dir.mkdir()
+    
+    # Create PDFs with different names
+    import shutil
+    shutil.copy(TEST_PDF_PATH, input_dir / "report1.pdf")
+    shutil.copy(TEST_PDF_PATH, input_dir / "report2.pdf")
+    shutil.copy(TEST_PDF_PATH, input_dir / "other.pdf")
+    
+    result = process_pdf(
+        str(input_dir),
+        "report*.pdf",
+        output_dir=str(tmp_path / "output"),
+        extract_text_flag=True
+    )
+    
+    assert result.is_ok
+    assert len(result.value) == 2  # Only the two report PDFs
+    assert all("report" in str(p) for p in result.value)
+
+
+def test_process_pdf_with_errors(tmp_path, mock_dependencies, mock_subprocess_run):
+    """Test graceful handling of mixed success/failure scenarios.
+    
+    Verifies that the processor:
+    1. Continues processing after individual file failures
+    2. Successfully processes valid PDFs
+    3. Collects and reports errors
+    4. Returns success if at least one file processed
+    
+    Directory structure created for test:
+    input/
+        valid.pdf     (good PDF, should process)
+        invalid.pdf   (corrupt file, should fail)
+    output/
+        valid/
+            valid.txt
+    
+    Expected behavior: Process should succeed overall, with warnings
+    about the invalid PDF.
+    """
+    from pdf_processor.main import process_pdf
+    
+    # Create test input directory with sample PDFs
+    input_dir = tmp_path / "input"
+    input_dir.mkdir()
+    
+    # Create one valid and one invalid PDF
+    import shutil
+    shutil.copy(TEST_PDF_PATH, input_dir / "valid.pdf")
+    (input_dir / "invalid.pdf").write_bytes(b"not a pdf")
+    
+    result = process_pdf(
+        str(input_dir),
+        "*.pdf",
+        output_dir=str(tmp_path / "output"),
+        extract_text_flag=True
+    )
+    
+    # Should succeed with warnings
+    assert result.is_ok
+    assert len(result.value) == 1  # Only the valid PDF processed
+    assert "valid" in str(result.value[0])
 
 
 def test_process_pdf_invalid_output_dir():
-    """Test PDF processing with invalid output directory."""
+    """Test handling of invalid output directory.
+    
+    Verifies error handling when the output directory:
+    1. Doesn't exist
+    2. Can't be created (e.g., insufficient permissions)
+    3. Returns appropriate error message
+    
+    Expected behavior: Process should fail immediately with a
+    directory-related error message.
+    """
     from pdf_processor.main import process_pdf
     
     result = process_pdf(
-        TEST_PDF_PATH,
+        ".",
+        "*.pdf",
         output_dir="/nonexistent/directory",
         extract_text_flag=True
     )
@@ -547,15 +766,82 @@ def test_process_pdf_invalid_output_dir():
     assert "directory" in str(result.error).lower()
 
 
-def test_process_pdf_invalid_input():
-    """Test PDF processing with invalid input file."""
+def test_process_pdf_no_matching_files():
+    """Test handling of no matching input files.
+    
+    Verifies error handling when:
+    1. Input directory exists but contains no matching files
+    2. Pattern doesn't match any files
+    3. Returns appropriate error message
+    
+    Expected behavior: Process should fail with a "no matching files"
+    error rather than silently succeeding with no output.
+    """
     from pdf_processor.main import process_pdf
     
     result = process_pdf(
-        "nonexistent.pdf",
-        output_dir=".",
+        ".",
+        "nonexistent*.pdf",
         extract_text_flag=True
     )
     
     assert not result.is_ok
-    assert "file not found" in str(result.error).lower()
+    assert "no files matching pattern" in str(result.error).lower()
+
+
+def test_parse_args_check_dependencies():
+    """Test parsing --check-dependencies flag."""
+    from pdf_processor.main import parse_args
+    args = parse_args(["--check-dependencies"])
+    assert args.check_dependencies is True
+    assert args.extract_text is False
+    assert args.extract_markdown is False
+    assert args.extract_images is False
+
+
+def test_check_dependencies_success(monkeypatch):
+    """Test dependency checking when all dependencies are installed."""
+    # Mock successful dependency check
+    def mock_check_deps():
+        return Result.Ok(None)
+    monkeypatch.setattr("pdf_processor.text.check_dependencies", mock_check_deps)
+    
+    # Should return True when dependencies are installed
+    from pdf_processor.main import check_dependencies
+    assert check_dependencies() is True
+
+
+def test_check_dependencies_failure(monkeypatch):
+    """Test dependency checking when dependencies are missing."""
+    # Mock failed dependency check
+    def mock_check_deps():
+        return Result.Err(ExternalToolError("mutool", "Not found in PATH"))
+    monkeypatch.setattr("pdf_processor.text.check_dependencies", mock_check_deps)
+    
+    # Should return False when dependencies are missing
+    from pdf_processor.main import check_dependencies
+    assert check_dependencies() is False
+
+
+def test_main_check_dependencies(monkeypatch):
+    """Test main function with --check-dependencies flag."""
+    # Mock command line arguments
+    monkeypatch.setattr("sys.argv", ["pdf-process", "--check-dependencies"])
+    
+    # Mock successful dependency check
+    def mock_check_deps():
+        return Result.Ok(None)
+    monkeypatch.setattr("pdf_processor.text.check_dependencies", mock_check_deps)
+    
+    # Should return 0 when dependencies are installed
+    from pdf_processor.main import main
+    assert main() == 0
+
+
+def test_main_missing_extraction_flags():
+    """Test main function when no extraction flags are set."""
+    from pdf_processor.main import parse_args
+    args = parse_args([])  # No flags set
+    assert args.extract_text is False
+    assert args.extract_markdown is False
+    assert args.extract_images is False

@@ -31,16 +31,16 @@ class TextBlock:
 def check_dependencies() -> Result[None, ExternalToolError]:
     """Check if mutool is installed and accessible."""
     try:
-        subprocess.run(
+        result = subprocess.run(
             ["mutool", "--version"],
             capture_output=True,
-            text=True,
-            check=True
+            text=True
         )
-        return Result.Ok(None)
-    except subprocess.CalledProcessError as e:
+        # mutool --version returns 1 but still outputs version info
+        if "mutool version" in result.stderr:
+            return Result.Ok(None)
         return Result.Err(
-            ExternalToolError("mutool", "Failed to run version check", e.returncode)
+            ExternalToolError("mutool", "Unexpected output from version check")
         )
     except FileNotFoundError:
         return Result.Err(
@@ -49,8 +49,23 @@ def check_dependencies() -> Result[None, ExternalToolError]:
 
 
 def validate_pdf(pdf_path: str) -> Result[Path, ValidationError]:
-    """Validate PDF file exists and is accessible."""
+    """Validate that a file is a valid, readable PDF.
+    
+    Performs the following checks:
+    1. Path exists and is a file
+    2. File has .pdf extension
+    3. File is a valid PDF (can be opened by PyMuPDF)
+    4. File is not empty or corrupted
+    
+    Args:
+        pdf_path: Path to the PDF file to validate
+        
+    Returns:
+        Result: On success, Ok(Path) with resolved path
+               On failure, Err(ValidationError) with error details
+    """
     try:
+        # Basic path validation
         path = Path(pdf_path)
         if not path.exists():
             return Result.Err(ValidationError(f"PDF file not found: {pdf_path}"))
@@ -58,6 +73,21 @@ def validate_pdf(pdf_path: str) -> Result[Path, ValidationError]:
             return Result.Err(ValidationError(f"Not a file: {pdf_path}"))
         if path.suffix.lower() != ".pdf":
             return Result.Err(ValidationError(f"Not a PDF file: {pdf_path}"))
+            
+        # Check if file is empty
+        if path.stat().st_size == 0:
+            return Result.Err(ValidationError(f"Empty PDF file: {pdf_path}"))
+            
+        # Try to open with PyMuPDF to verify it's a valid PDF
+        try:
+            doc = fitz.open(pdf_path)
+            if doc.page_count == 0:
+                doc.close()
+                return Result.Err(ValidationError(f"PDF has no pages: {pdf_path}"))
+            doc.close()
+        except Exception as e:
+            return Result.Err(ValidationError(f"Invalid PDF file: {pdf_path} ({str(e)})"))
+            
         return Result.Ok(path)
     except Exception as e:
         return Result.Err(ValidationError(f"Invalid path: {pdf_path} ({str(e)})"))

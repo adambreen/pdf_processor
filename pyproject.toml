@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "pdf_processor"
-version = "0.3.0"
+version = "0.4.0"
 description = "A Python package to batch process PDFs into PNGs or extract text/Markdown for LLM compatibility."
 authors = ["Adam Breen <adam@adambreen.com>"]
 readme = "README.md"
@@ -26,6 +26,7 @@ reportlab = "^3.6"
 
 [tool.poetry.scripts]
 pdf-process = "pdf_processor.main:main"
+pdf-process-post-install = "pdf_processor.main:post_install_message"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]

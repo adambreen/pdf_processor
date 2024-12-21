@@ -22,16 +22,41 @@ The goal of this tool is to make PDF content **machine-readable** for downstream
 
 ## Installation
 
-### Production Installation
-Install globally using pipx:
+First, install pipx if you haven't already:
 ```bash
-pipx install pdf_processor
+# macOS
+brew install pipx
+
+# Other systems
+python3 -m pip install --user pipx
 ```
 
-### Development Installation
-To install the package for development:
+Then install pdf_processor:
 ```bash
-poetry install --with dev
+# Install with Python 3.11 (required)
+pipx install pdf_processor --python python3.11
+```
+
+### System Requirements
+
+- Python 3.11.x (required by PyMuPDF)
+- `mutool` (part of MuPDF tools)
+
+To install `mutool`:
+```bash
+# macOS
+brew install mupdf
+
+# Ubuntu/Debian
+apt-get install mupdf-tools
+
+# Arch Linux
+pacman -S mupdf-tools
+```
+
+After installation, verify your setup:
+```bash
+pdf-process --check-dependencies
 ```
 
 ---
@@ -102,6 +127,7 @@ pdf-process -dir /path/to/pdfs -input '*.pdf' -output /path/to/output --extract-
 - `--extract-images`: Extract each page of the PDF as PNG images.
 - `--extract-text`: Extract the raw plain text from the PDF.
 - `--extract-markdown`: Extract structured Markdown, including tables and hyperlinks.
+- `--check-dependencies`: Check if required dependencies are installed.
 
 ---
 
@@ -197,18 +223,35 @@ The table detection system follows a test-driven development approach:
 
 ---
 
+## Development
+
+Clone and set up the development environment:
+```bash
+# Clone the repository
+git clone https://github.com/adambreen/pdf_processor.git
+cd pdf_processor
+
+# Install development dependencies with Poetry
+poetry install
+
+# Run tests
+poetry run pytest
+```
+
+---
+
 ## Testing
 
 ### Running Tests
 Run the test suite with pytest:
 ```bash
-pytest tests/
+poetry run pytest tests/
 ```
 
 ### Generating the Sample PDF
 If `sample.pdf` is missing or needs regeneration, run:
 ```bash
-python tests/generate_sample_pdf.py
+poetry run python tests/generate_sample_pdf.py
 ```
 This will create a `sample.pdf` in the `tests/` directory.
 
