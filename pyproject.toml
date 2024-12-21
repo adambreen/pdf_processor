@@ -1,0 +1,32 @@
+[tool.poetry]
+name = "pdf_processor"
+version = "0.3.0"
+description = "A Python package to batch process PDFs into PNGs or extract text/Markdown for LLM compatibility."
+authors = ["Adam Breen <adam@adambreen.com>"]
+readme = "README.md"
+license = "MIT"
+homepage = "https://github.com/adambreen/pdf_processor"
+repository = "https://github.com/adambreen/pdf_processor"
+keywords = ["PDF", "Markdown", "LLM", "text extraction", "image processing"]
+classifiers = [
+    "Programming Language :: Python :: 3.11",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Topic :: Text Processing :: Markup :: Markdown",
+    "Topic :: Multimedia :: Graphics"
+]
+
+[tool.poetry.dependencies]
+python = "3.11.*"
+pymupdf = "^1.21"
+
+[tool.poetry.dev-dependencies]
+pytest = "^7.0"
+reportlab = "^3.6"
+
+[tool.poetry.scripts]
+pdf-process = "pdf_processor.main:main"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
